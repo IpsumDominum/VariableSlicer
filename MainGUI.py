@@ -29,7 +29,6 @@ class Data_interface(tk.Tk):
         self.current_dir = os.getcwd()
         self.not_saved = True
 
-        tk.Tk.iconbitmap(self, default="favicon.ico")
         tk.Tk.wm_title(self, "Data_interface 2018")
         container = tk.Frame(self)
         container.pack(side="top",fill="both",expand = True)
@@ -301,7 +300,7 @@ class MainPage(tk.Frame):
         self.interval.set(selection)
         if self.interval.get() == "10 days":
             self.get_ncfile("h1")
-            for file in os.listdir(self.controller.directory+"\\h1"):
+            for file in os.listdir(self.controller.directory+"/h1"):
                 date = file[-19:]
                 date = date[:10]
                 self.start_selection.insert(END,date)
@@ -309,14 +308,14 @@ class MainPage(tk.Frame):
 
         elif self.interval.get() == "months":
             self.get_ncfile("h0")
-            for file in os.listdir(self.controller.directory+"\\h0"):
+            for file in os.listdir(self.controller.directory+"/h0"):
                 date = file[-10:]
                 date = date[:7]
                 self.start_selection.insert(END, date)
                 self.end_selection.insert(END, date)
         elif self.interval.get() == "years":
             self.get_ncfile("h2")
-            for file in os.listdir(self.controller.directory+"\\h2"):
+            for file in os.listdir(self.controller.directory+"/h2"):
                 date = file[-19:]
                 date = date[:10]
                 self.start_selection.insert(END, date)
@@ -341,44 +340,40 @@ class MainPage(tk.Frame):
                 file.close()
                 self.controller.saving_directory = saving_directory
                 os.chdir(saving_directory)  
-            write_data = Dataset(self.saved_file_name.get()+".nc", mode='w', format='NETCDF3_64BIT_OFFSET')
-            started= False
-            to_end = False
-            initiated = False
 
-            print("initiating dimensions...")
+            #Initiating data manuvuring
+            with Dataset(self.saved_file_name.get()+".nc", mode='w', format='NETCDF3_64BIT_OFFSET') as write_data:
 
-            #inheriting various dimensions from standard file
-            write_data.createDimension('lat',96)
-            write_data.createDimension('lon', 144)
-            write_data.createDimension('slat', 95)
-            write_data.createDimension('slon', 144)
-            write_data.createDimension('time', None)
-            write_data.createDimension('nbnd', 2)
-            write_data.createDimension('chars', 8)
-            write_data.createDimension('lev', 66)
-            write_data.createDimension('ilev', 67)
+                print("initiating dimensions...")
 
-            ########################
-            #adding unit variables #
-            ########################
-            print("creating unit variables...")
-            write_data.createVariable('lat',np.float64,self.nc_file.variables['lat'].dimensions)
-            write_data.createVariable('lon',np.float64,self.nc_file.variables['lon'].dimensions)
-            write_data.createVariable('lev',np.float64,self.nc_file.variables['lev'].dimensions)
-            #############################
-            write_data.close()
-            write_data = Dataset(self.saved_file_name.get()+".nc", mode='r+')
+                #inheriting various dimensions from standard file
+                write_data.createDimension('lat',96)
+                write_data.createDimension('lon', 144)
+                write_data.createDimension('slat', 95)
+                write_data.createDimension('slon', 144)
+                write_data.createDimension('nbnd', 2)
+                write_data.createDimension('chars', 8)
+                write_data.createDimension('lev', 66)
+                write_data.createDimension('ilev', 67)
 
-            #assigning value to unit variables created
-            variables = ['lat','lon','lev']
-            for var in variables:
-                write_data.variables[var][:] = self.nc_file.variables[var][:]
+                ########################
+                #adding unit variables #
+                ########################
+                print("creating unit variables...")
+                write_data.createVariable('lat',np.float64,self.nc_file.variables['lat'].dimensions)
+                write_data.createVariable('lon',np.float64,self.nc_file.variables['lon'].dimensions)
+                write_data.createVariable('lev',np.float64,self.nc_file.variables['lev'].dimensions)
+                #############################
 
-            #appending their corresponding attributes
-            for var in variables:
-                for attr in self.nc_file.variables[var].ncattrs():
-                    write_data.variables[var].setncattr(attr,self.nc_file.variables[var].getncattr(attr))
+                #assigning value to unit variables created
+                variables = ['lat','lon','lev']
+                for var in variables:
+                    write_data.variables[var][:] = self.nc_file.variables[var][:]
+
+                #appending their corresponding attributes
+                for var in variables:
+                    for attr in self.nc_file.variables[var].ncattrs():
+                        write_data.variables[var].setncattr(attr,self.nc_file.variables[var].getncattr(attr))
 
 
             """
@@ -398,9 +393,17 @@ class MainPage(tk.Frame):
                 #iterating through required files
                 print("10 days...")
                 print("iterating through required files")
-
-                sum = np.empty(self.nc_file.variables[self.var_name][:].shape)
-                for file in os.listdir(self.controller.directory + "\\h1"):
+                count = 0
+                temp_progress = 0
+                initiated = False
+                started= False
+                to_end = False
+                years = int(self.end_date[:4]) - int(self.start_date[:4])
+                months = int(self.end_date[5:7])- int(self.start_date[5:7])
+                days = int(self.end_date[8:10])
+                total_days = years*365 + months *30 + days
+                days_dir = self.controller.directory + "/h1/"
+                for file in os.listdir(days_dir):
                     date = file[-19:]
                     date = date[:10]
                     if date == self.start_date:
@@ -408,44 +411,59 @@ class MainPage(tk.Frame):
                     if date == self.end_date:
                         to_end = True
                     if started :
-                        data = Dataset(self.controller.directory + "\\h1\\"+file,mode='r')
-                        if (initiated):
-                            sum = np.concatenate((sum,data.variables[self.var_name][:]),axis=0)
-                        else:
-                            sum = data.variables[self.var_name][:]
-                            initiated = True
-                        data.close()
+                        with Dataset(days_dir+file,mode='r') as data:
+                            if (initiated):
+                                sum = np.concatenate((sum,data.variables[self.var_name][:]),axis=0)
+                            else:
+                                sum = data.variables[self.var_name][:]
+                                initiated = True 
+                        count += 1
+                        progress = round(count/total_days,2)*1000
+                        if progress != temp_progress:
+                            print("progress: "+"||"*int(progress/10) + str(progress)+"0%")
+                        temp_progress = progress
                         if to_end == True:
                             break
+                #setting the time dimension to be equal to a fixed frame.
+                with Dataset(self.saved_file_name.get()+".nc", mode='r+') as write_data:
+                ######
+                    write_data.createDimension('time', count)
 
-                print("appending concatnated variable to new data file...")
-                #appending concatnated variable to new data file/adding datavariables
-                self.get_ncfile("h0")
-                singled_out_variable = self.nc_file.variables[self.var_name]
-                write_data.createVariable(self.var_name, np.float32,self.nc_file.variables[self.var_name].dimensions)
-                write_data.close()
-                ###############################################
+                    print("appending concatnated variable to new data file...")
+                    #appending concatnated variable to new data file/adding datavariables
+                    self.get_ncfile("h0")
+                    singled_out_variable = self.nc_file.variables[self.var_name]
+                    write_data.createVariable(self.var_name, np.float32,self.nc_file.variables[self.var_name].dimensions)
+                    
+                    ###############################################
 
-                print("assinging value to variable created...")
-                write_data = Dataset(self.saved_file_name.get()+".nc",mode='r+')
-                #assigning value to variable created
-                write_data.variables[self.var_name][:] = sum
+                    print("assinging value to variable created...")
+                    #assigning value to variable created
+                    write_data.variables[self.var_name][:] = sum
 
-                print("adding various attributes...")
-                #adding various attributes
-                write_data.variables[self.var_name].setncattr("Type:", "Piled data by 10 days")
-                write_data.variables[self.var_name].setncattr("From:",self.start_date)
-                write_data.variables[self.var_name].setncattr("To:",self.end_date)
-                for attr in singled_out_variable.ncattrs():
-                    write_data.variables[self.var_name].setncattr(attr, singled_out_variable.getncattr(attr))
+                    print("adding various attributes...")
+                    #adding various attributes
+                    attrdict = {"Type":"Piled data by 10 days",
+                                "From|To":self.start_date+"|"+self.end_date,
+                                "Total_days":total_days}
+                    for attr in singled_out_variable.ncattrs():
+                        attrdict[attr] = singled_out_variable.getncattr(attr)
+                    write_data.variables[self.var_name].setncatts(attrdict)
                 #############################################################################################
             elif self.interval.get() == "months":
                 #############################################################################################
                 #iterating through required files
                 print("months...")
                 print("iterating through required files")
-
-                for file in os.listdir(self.controller.directory + "\\h0"):
+                count = 0
+                initiated = False
+                started= False
+                to_end = False
+                years = int(self.end_date[:4]) - int(self.start_date[:4])
+                months = int(self.end_date[5:7])- int(self.start_date[5:7])
+                total_months = years*12 + months
+                months_dir = self.controller.directory + "/h0"
+                for file in os.listdir(months_dir):
                     date = file[-10:]
                     date = date[:7]
                     if date == self.start_date:
@@ -453,44 +471,56 @@ class MainPage(tk.Frame):
                     if date == self.end_date:
                         to_end = True
                     if started:
-                        data = Dataset(self.controller.directory + "\\h0\\"+file, mode='r')
-                        if (initiated):
-                            sum = np.concatenate((sum,data.variables[self.var_name][:]),axis=0)
-                        else:
-                            sum = data.variables[self.var_name][:]
-                            initiated = True
-                        data.close()
+                        with Dataset(months_dir+file,mode='r') as data:
+                            if (initiated):
+                                sum = np.concatenate((sum,data.variables[self.var_name][:]),axis=0)
+                            else:
+                                sum = data.variables[self.var_name][:]
+                                initiated = True 
+                        count +=1
+                        progress = round(count/total_days,2)*100
+                        if progress != temp_progress:
+                            print("progress: "+"||"*int(progress) + str(progress)+"0%")
+                        temp_progress = progress
                         if to_end == True:
                             break
+                #setting the time dimension to be equal to a fixed frame.
+                with Dataset(self.saved_file_name.get()+".nc", mode='r+') as write_data:
+                ######
+                    write_data.createDimension('time', count)
 
-                print("appending concatnated variable to new data file...")            
-                #appending concatnated variable to new data file/adding datavariables            
-                self.get_ncfile("h1")
-                singled_out_variable = self.nc_file.variables[self.var_name]
-                write_data.createVariable(self.var_name, np.float32,self.nc_file.variables[self.var_name].dimensions)
-                write_data.close()
-                ###############################################
+                    print("appending concatnated variable to new data file...")            
+                    #appending concatnated variable to new data file/adding datavariables            
+                    self.get_ncfile("h1")
+                    singled_out_variable = self.nc_file.variables[self.var_name]
+                    write_data.createVariable(self.var_name, np.float32,self.nc_file.variables[self.var_name].dimensions)
+                    ###############################################
 
-                print("assinging value to variable created...")
-                write_data = Dataset(self.saved_file_name.get()+".nc", mode='r+')
-                #assigning value to variable created
-                write_data.variables[self.var_name][:] = sum
+                    print("assinging value to variable created...")
+                    #assigning value to variable created
+                    write_data.variables[self.var_name][:] = sum
 
-                print("adding various attributes...")
-                #adding various attributes
-                write_data.variables[self.var_name].setncattr("Type:", "Piled monthly data")
-                write_data.variables[self.var_name].setncattr("From:",self.start_date)
-                write_data.variables[self.var_name].setncattr("To:",self.end_date)
-                for attr in singled_out_variable.ncattrs():
-                    write_data.variables[self.var_name].setncattr(attr, singled_out_variable.getncattr(attr))
+                    print("adding various attributes...")
+                    #adding various attributes
+                    attrdict = {"Type":"Piled monthly data",
+                                "From|To":self.start_date+"|"+self.end_date,
+                                "Total_months":total_months}
+                    for attr in singled_out_variable.ncattrs():
+                        attrdict[attr] = singled_out_variable.getncattr(attr)
+                    write_data.variables[self.var_name].setncatts(attrdict)
                 #############################################################################################
             elif self.interval.get() == "years":
                 #############################################################################################
                 #iterating through required files
                 print("years...")
                 print("iterating through required files")
-
-                for file in os.listdir(self.controller.directory + "\\h2\\"):
+                count = 0
+                initiated = False
+                started= False
+                to_end = False
+                years = int(self.end_date[:4]) - int(self.start_date[:4])
+                years_dir = self.controller.directory + "/h2/"
+                for file in os.listdir(years_dir):
                     date = file[-19:]
                     date = date[:10]
                     if date == self.start_date:
@@ -498,52 +528,60 @@ class MainPage(tk.Frame):
                     if date == self.end_date:
                         to_end = True
                     if started:
-                        data = Dataset(self.controller.directory + "\\h2\\"+file, mode='r')
-                        if (initiated):
-                            sum = np.concatenate((sum,data.variables[self.var_name][:]),axis=0)
-                        else:
-                            sum = data.variables[self.var_name][:]
-                            initiated = True
+                        with Dataset(years_dir+file,mode='r') as data:
+                            if (initiated):
+                                sum = np.concatenate((sum,data.variables[self.var_name][:]),axis=0)
+                            else:
+                                sum = data.variables[self.var_name][:]
+                                initiated = True 
                         data.close()
+                        count +=1
+                        progress = round(count/total_days,2)*100
+                        if progress != temp_progress:
+                            print("progress: "+"||"*int(progress) + str(progress)+"%")
+                        temp_progress = progress
                         if to_end == True:
                             break
+                #setting the time dimension to be equal to a fixed frame.
+                with Dataset(self.saved_file_name.get()+".nc", mode='r+') as write_data:
+                ######
+                    write_data.createDimension('time', count)
 
-                print("appending concatnated variable to new data file...")                     
-                #appending concatnated variable to new data file/adding datavariables            
-                self.get_ncfile("h2")
-                singled_out_variable = self.nc_file.variables[self.var_name]
-                dimension =  singled_out_variable.dimensions
-                write_data.createVariable(self.var_name, np.float32,dimension)
-                write_data.close()
-                ###############################################
+                    print("appending concatnated variable to new data file...")                     
+                    #appending concatnated variable to new data file/adding datavariables            
+                    self.get_ncfile("h2")
+                    singled_out_variable = self.nc_file.variables[self.var_name]
+                    dimension =  singled_out_variable.dimensions
+                    write_data.createVariable(self.var_name, np.float32,dimension)
+                    ###############################################
 
-                print("assinging value to variable created...")
-                write_data = Dataset(self.saved_file_name.get()+".nc", mode='r+')
-                #assigning value to variable created
-                write_data.variables[self.var_name][:] = sum
+                    print("assinging value to variable created...")
+                    #assigning value to variable created
+                    write_data.variables[self.var_name][:] = sum
 
-                print("adding various attributes...")
-                #adding various attributes
-                write_data.variables[self.var_name].setncattr("Type:", "Piled Yearly data")
-                write_data.variables[self.var_name].setncattr("From:",self.start_date)
-                write_data.variables[self.var_name].setncattr("To:",self.end_date)
-                for attr in singled_out_variable.ncattrs():
-                    write_data.variables[self.var_name].setncattr(attr, singled_out_variable.getncattr(attr))
+                    print("adding various attributes...")
+                    #adding various attributes
+                    attrdict = {"Type":"Piled yearly data",
+                                "From|To":self.start_date+"|"+self.end_date,
+                                "Total_years":years}
+                    for attr in singled_out_variable.ncattrs():
+                        attrdict[attr] = singled_out_variable.getncattr(attr)
+                    write_data.variables[self.var_name].setncatts(attrdict)
+
                 #############################################################################################
             print("done!")
             self.controller.popup("Success!", "file :'"+self.saved_file_name.get()+"' successfully saved at: " + saving_directory)
             os.chdir(self.controller.directory)
-            self.exit = True
 
     def get_ncfile(self,interval):
         file_selected = False
         self.variable_list.delete(0,END)
         # select the first file in the directory
-        for file_name in os.listdir(self.controller.directory + "\\"+interval):
+        for file_name in os.listdir(self.controller.directory + "/"+interval):
             if not file_selected and file_name.endswith('.nc'):
                 file = file_name
                 file_selected = True
-        self.nc_file = Dataset(self.controller.directory+"\\"+interval+"\\" + file, mode='r')
+        self.nc_file = Dataset(self.controller.directory+"/"+interval+"/" + file, mode='r')
         for variable in self.nc_file.variables.keys():
             self.variable_list.insert(END, variable)
     def setFileName(self):
