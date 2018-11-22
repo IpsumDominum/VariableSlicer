@@ -161,11 +161,11 @@ class StartPage(tk.Frame):
         try:
             file_selected = False
             #select the first file in the directory
-            for file_name in os.listdir(self.controller.directory+"\\h0"):
+            for file_name in os.listdir(self.controller.directory+" /h0"):
                 if not file_selected and file_name.endswith('.nc'):
                     file = file_name
                     file_selected = True
-            self.nc_file = Dataset("h0\\"+file,mode='r')
+            self.nc_file = Dataset("h0 /"+file,mode='r')
             self.controller.show_frame(MainPage)
             self.nc_file.close()
         except FileNotFoundError:
@@ -199,6 +199,7 @@ class MainPage(tk.Frame):
         self.warning = StringVar()
         self.interval = StringVar()
         self.saved_file_name = StringVar()
+        self.by_month_each_year = IntVar()
         self.time_interval = ["10 days","months","years"]
         self.controller = controller
         self.path_name = ""
@@ -259,23 +260,23 @@ class MainPage(tk.Frame):
         self.end_selection['yscrollcommand'] = scrolley.set
 
         #showing the selected dates
-        self.start_show = Entry(self.frame3,textvariable=self.start).grid(row=0,column=0)
-        self.end_show = Entry(self.frame3, textvariable=self.end).grid(row=1,column=0)
+        self.start_show = Entry(self.frame3,textvariable=self.start).grid(row=1,column=0)
+        self.end_show = Entry(self.frame3, textvariable=self.end).grid(row=2,column=0)
         self.start.set("start: ")
         self.end.set("end: ")
 
         #save button
-        self.save = Button(self.frame3, text="save",command = self.generate_file).grid(row=4,column=0)
-        self.file_name_label = Label(self.frame3, text="file name:").grid(row=3,column=0)
+        self.save = Button(self.frame3, text="save",command = self.generate_file).grid(row=5,column=0)
+        self.by_month_each_year_check = Checkbutton(self.frame3, text="select by month each year",variable=self.by_month_each_year).grid(row=0,column=0)
         self.file_name = Entry(self.frame3,textvariable = self.saved_file_name).grid(row=3,column=0)
-        self.set_save_name = Button(self.frame3, text="set file name",command=self.setFileName).grid(row=2,column=0)
+        self.set_save_name = Button(self.frame3, text="set file name",command=self.setFileName).grid(row=4,column=0)
+
 
     def OnVarSelect(self,event):
         self.variable_desc.delete(0,END)
         widget = event.widget
         self.var_name = widget.get(widget.curselection()[0])
         variable = self.nc_file.variables[self.var_name]
-        self.var_shape = variable[0].shape
         attributes = variable.ncattrs()
         self.variable_desc.insert(END,str(variable.name))
         for attr in attributes:
@@ -298,9 +299,11 @@ class MainPage(tk.Frame):
         self.start_selection.insert(END, "Start time Selection")
         self.end_selection.insert(END, "End time Selection")
         self.interval.set(selection)
+        self.variable_desc.delete(0, END)
+        self.var_name = ""
         if self.interval.get() == "10 days":
             self.get_ncfile("h1")
-            for file in os.listdir(self.controller.directory+"/h1"):
+            for file in os.listdir(self.controller.directory+" /h1"):
                 date = file[-19:]
                 date = date[:10]
                 self.start_selection.insert(END,date)
@@ -308,14 +311,14 @@ class MainPage(tk.Frame):
 
         elif self.interval.get() == "months":
             self.get_ncfile("h0")
-            for file in os.listdir(self.controller.directory+"/h0"):
+            for file in os.listdir(self.controller.directory+" /h0"):
                 date = file[-10:]
                 date = date[:7]
                 self.start_selection.insert(END, date)
                 self.end_selection.insert(END, date)
         elif self.interval.get() == "years":
             self.get_ncfile("h2")
-            for file in os.listdir(self.controller.directory+"/h2"):
+            for file in os.listdir(self.controller.directory+" /h2"):
                 date = file[-19:]
                 date = date[:10]
                 self.start_selection.insert(END, date)
@@ -328,6 +331,10 @@ class MainPage(tk.Frame):
             self.controller.popup("error", "please select valid both start and end times")
         elif self.saved_file_name.get() == "":
             self.controller.popup("error","please first configure the name for the file intended to be saved")
+        elif self.by_month_each_year.get() == 1 and (self.interval.get() != 'months'):
+            self.controller.popup("error","the selecting by a certain month each year feature is only available if ' by month' interval is selected")
+        elif self.by_month_each_year.get() ==1 and (self.start_date[-2:] != self.end_date[-2:]):
+            self.controller.popup("error","please select corresponding starting and ending months")
         else:
             saving_directory = self.controller.saving_directory
             try:
@@ -355,6 +362,7 @@ class MainPage(tk.Frame):
                 write_data.createDimension('chars', 8)
                 write_data.createDimension('lev', 66)
                 write_data.createDimension('ilev', 67)
+                write_data.createDimension('time', None)
 
                 ########################
                 #adding unit variables #
@@ -402,7 +410,7 @@ class MainPage(tk.Frame):
                 months = int(self.end_date[5:7])- int(self.start_date[5:7])
                 days = int(self.end_date[8:10])
                 total_days = years*365 + months *30 + days
-                days_dir = self.controller.directory + "/h1/"
+                days_dir = self.controller.directory + " /h1 /"
                 for file in os.listdir(days_dir):
                     date = file[-19:]
                     date = date[:10]
@@ -417,18 +425,18 @@ class MainPage(tk.Frame):
                             else:
                                 sum = data.variables[self.var_name][:]
                                 initiated = True 
-                        count += 1
-                        progress = round(count/total_days,2)*1000
+                        progress = round(count/total_days,2)*100
                         if progress != temp_progress:
-                            print("progress: "+"||"*int(progress/10) + str(progress)+"0%")
+                            print("progress: "+"||"*int(progress/10) + str(progress)+"%")
+                        print(count)
+                        print(total_days)
                         temp_progress = progress
+                        count += 10
                         if to_end == True:
                             break
                 #setting the time dimension to be equal to a fixed frame.
                 with Dataset(self.saved_file_name.get()+".nc", mode='r+') as write_data:
                 ######
-                    write_data.createDimension('time', count)
-
                     print("appending concatnated variable to new data file...")
                     #appending concatnated variable to new data file/adding datavariables
                     self.get_ncfile("h0")
@@ -456,39 +464,63 @@ class MainPage(tk.Frame):
                 print("months...")
                 print("iterating through required files")
                 count = 0
+                temp_progress = 0
                 initiated = False
                 started= False
                 to_end = False
                 years = int(self.end_date[:4]) - int(self.start_date[:4])
                 months = int(self.end_date[5:7])- int(self.start_date[5:7])
                 total_months = years*12 + months
-                months_dir = self.controller.directory + "/h0"
-                for file in os.listdir(months_dir):
-                    date = file[-10:]
-                    date = date[:7]
-                    if date == self.start_date:
-                        started = True
-                    if date == self.end_date:
-                        to_end = True
-                    if started:
-                        with Dataset(months_dir+file,mode='r') as data:
-                            if (initiated):
-                                sum = np.concatenate((sum,data.variables[self.var_name][:]),axis=0)
-                            else:
-                                sum = data.variables[self.var_name][:]
-                                initiated = True 
-                        count +=1
-                        progress = round(count/total_days,2)*100
-                        if progress != temp_progress:
-                            print("progress: "+"||"*int(progress) + str(progress)+"0%")
-                        temp_progress = progress
-                        if to_end == True:
-                            break
+                months_dir = self.controller.directory + " /h0 /"
+                
+                if self.by_month_each_year.get() == 1:
+                    for file in os.listdir(months_dir):
+                        date = file[-10:]
+                        date = date[:7]
+                        if started == False and date == self.start_date:
+                            started = True
+                        if to_end == False and date == self.end_date:
+                            to_end = True
+                        if started:
+                            if date[-2:] == self.start_date[-2:] and (initiated):
+                                with Dataset(months_dir+file,mode='r') as data:
+                                    sum = np.concatenate((sum,data.variables[self.var_name][:]),axis=0)
+                            elif date[-2:] == self.start_date[-2:]:
+                                with Dataset(months_dir+file,mode='r') as data:
+                                    sum = data.variables[self.var_name][:]
+                                    initiated = True
+                            progress = round(count/total_months,2)*100
+                            if progress != temp_progress:
+                                print("progress: "+"||"*int(progress/10) + str(progress)+"%")
+                            temp_progress = progress
+                            count +=1
+                            if to_end == True:
+                                break
+                else:
+                    for file in os.listdir(months_dir):
+                        date = file[-10:]
+                        date = date[:7]
+                        if started == False and date == self.start_date:
+                            started = True
+                        if to_end == False and date == self.end_date:
+                            to_end = True
+                        if started:
+                            with Dataset(months_dir+file,mode='r') as data:
+                                if (initiated):
+                                    sum = np.concatenate((sum,data.variables[self.var_name][:]),axis=0)
+                                else:
+                                    sum = data.variables[self.var_name][:]
+                                    initiated = True 
+                            progress = round(count/total_months,2)*100
+                            if progress != temp_progress:
+                                print("progress: "+"||"*int(progress/10) + str(progress)+"%")
+                            temp_progress = progress
+                            count +=1
+                            if to_end == True:
+                                break
                 #setting the time dimension to be equal to a fixed frame.
                 with Dataset(self.saved_file_name.get()+".nc", mode='r+') as write_data:
                 ######
-                    write_data.createDimension('time', count)
-
                     print("appending concatnated variable to new data file...")            
                     #appending concatnated variable to new data file/adding datavariables            
                     self.get_ncfile("h1")
@@ -502,9 +534,16 @@ class MainPage(tk.Frame):
 
                     print("adding various attributes...")
                     #adding various attributes
-                    attrdict = {"Type":"Piled monthly data",
-                                "From|To":self.start_date+"|"+self.end_date,
-                                "Total_months":total_months}
+                    if self.by_month_each_year.get() ==1:
+                        attrdict = {"Type":"Piled monthly data",
+                                    "Selected Month per year": "True",
+                                    "From|To":self.start_date+"|"+self.end_date,
+                                    "Total_months":(total_months/12)+1}
+                    else:
+                        attrdict = {"Type":"Piled monthly data",
+                                    "Selected Month per year": "False",
+                                    "From|To":self.start_date+"|"+self.end_date,
+                                    "Total_months":total_months}
                     for attr in singled_out_variable.ncattrs():
                         attrdict[attr] = singled_out_variable.getncattr(attr)
                     write_data.variables[self.var_name].setncatts(attrdict)
@@ -515,11 +554,12 @@ class MainPage(tk.Frame):
                 print("years...")
                 print("iterating through required files")
                 count = 0
-                initiated = False
+                temp_progress = 0
+                initiated = Falses
                 started= False
                 to_end = False
                 years = int(self.end_date[:4]) - int(self.start_date[:4])
-                years_dir = self.controller.directory + "/h2/"
+                years_dir = self.controller.directory + " /h2 /"
                 for file in os.listdir(years_dir):
                     date = file[-19:]
                     date = date[:10]
@@ -533,20 +573,17 @@ class MainPage(tk.Frame):
                                 sum = np.concatenate((sum,data.variables[self.var_name][:]),axis=0)
                             else:
                                 sum = data.variables[self.var_name][:]
-                                initiated = True 
-                        data.close()
-                        count +=1
-                        progress = round(count/total_days,2)*100
+                                initiated = True
+                        progress = round(count/years,2)*1000
                         if progress != temp_progress:
-                            print("progress: "+"||"*int(progress) + str(progress)+"%")
+                            print("progress: "+"||"*int(progress/10) + str(progress)+"%")
                         temp_progress = progress
+                        count +=1
                         if to_end == True:
                             break
                 #setting the time dimension to be equal to a fixed frame.
                 with Dataset(self.saved_file_name.get()+".nc", mode='r+') as write_data:
                 ######
-                    write_data.createDimension('time', count)
-
                     print("appending concatnated variable to new data file...")                     
                     #appending concatnated variable to new data file/adding datavariables            
                     self.get_ncfile("h2")
@@ -577,11 +614,11 @@ class MainPage(tk.Frame):
         file_selected = False
         self.variable_list.delete(0,END)
         # select the first file in the directory
-        for file_name in os.listdir(self.controller.directory + "/"+interval):
+        for file_name in os.listdir(self.controller.directory + " /"+interval):
             if not file_selected and file_name.endswith('.nc'):
                 file = file_name
                 file_selected = True
-        self.nc_file = Dataset(self.controller.directory+"/"+interval+"/" + file, mode='r')
+        self.nc_file = Dataset(self.controller.directory+" /"+interval+" /" + file, mode='r')
         for variable in self.nc_file.variables.keys():
             self.variable_list.insert(END, variable)
     def setFileName(self):
