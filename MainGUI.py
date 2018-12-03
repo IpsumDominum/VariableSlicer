@@ -10,6 +10,7 @@ import os
 import numpy as np
 import sys
 import re
+import threading
 import time
 sys.setrecursionlimit(5000)
 
@@ -18,8 +19,8 @@ sys.setrecursionlimit(5000)
 LARGE_FONT = ("Helvatica",15)
 SMALL_FONT = ("VerdaNA",10)
 MEDIUM_FONT = ("VerdaNA",12)
-w_height = "600"
-w_width = "400"
+w_height = "750"
+w_width = "500"
 
 class Data_interface(tk.Tk):
 
@@ -166,8 +167,8 @@ class StartPage(tk.Frame):
 
         #errorlog
 
-        self.errorlog = Entry(frame3,width=100,textvariable=self.controller.errorlog)
-        self.errorlog.pack(side=BOTTOM)
+        self.errorlog_bar = Entry(frame3,width=100,textvariable=self.controller.errorlog)
+        self.errorlog_bar.pack(side=BOTTOM)
 
 
     def browse_button(self):
@@ -181,8 +182,9 @@ class StartPage(tk.Frame):
             self.controller.frames[MainPage].update_variable_list("h2")
             self.controller.show_frame(MainPage)
         except FileNotFoundError:
-            self.errolog.config({"background":"PINK"})
+            self.errorlog_bar.config({"background":"PINK"})
             self.controller.errorlog.set("error log: please set a valid directory containing\n h0, h1, and h2 \n files")
+            self.controller.show_frame(MainPage)
     def check_saving_directory(self):
         try:
             with open("saving_directory.txt", "r") as file:
@@ -212,26 +214,29 @@ class MainPage(tk.Frame):
         self.warning = StringVar()
         self.interval = StringVar()
         self.saved_file_name = StringVar()
+        self.selecting_from_selected = StringVar()
         self.days_c = IntVar()
         self.month_c = IntVar()
         self.ten_days_c = IntVar()
         self.years_c = IntVar()
         self.days_c.set(1)
+        self.selecting_from_selected.set("selected(click delete to delete): empty")
         self.time_interval = ["year","month","day"]
         self.controller = controller
         self.path_name = ""
-        self.var_shape = ()
-        self.var_name = ""
+        self.selected_variables_list = []
         self.start_month_temp = "m"
         self.end_month_temp = "m"
         self.start_day_temp = "d"
         self.end_day_temp = "d"
         self.start_year = "y"
         self.end_year = "y"
-        self.start_month = "m"
-        self.end_month = "m"
+        self.start_month = "NA"
+        self.end_month = "NA"
         self.start_day = "d"
         self.end_day = "d"
+        self.selecting_num = 0
+        self.additional_variables = ['lev','hyam','hybm','ilev','hyai','hybi','P0','lat','lon','slat','slon','w_stag','ntrm','ntrn','ntrk','ndbase','nsbase','nbdate','nbsec','mdt','nlon','wnummax','gw']
 
 
         #making frames
@@ -259,12 +264,27 @@ class MainPage(tk.Frame):
         scroll1y = tk.Scrollbar(self.frame1, orient=tk.VERTICAL, command=self.variable_list.yview)
         scroll1y.grid(row=0, column=1, sticky='nsw')
         self.variable_list['yscrollcommand'] = scroll1y.set
-        self.variable_desc = Listbox(self.frame1, width='50', selectmode=BROWSE, exportselection=0)
+
+        self.all_the_selected_variables = Listbox(self.frame1, width='50',height='9', selectmode=BROWSE, exportselection=0)
+        self.all_the_selected_variables.grid(row=4, column=0,sticky="nsew")
+        self.all_the_selected_variables.bind("<Double-Button-1>", self.SelectedVarSelect)
+        scrollvy = tk.Scrollbar(self.frame1, orient=tk.VERTICAL, command=self.all_the_selected_variables.yview)
+        scrollvy.grid(row=4, column=1, sticky='nsw')
+        self.all_the_selected_variables['yscrollcommand'] = scrollvy.set
+
+        self.variable_desc = Listbox(self.frame1, width='50',height='6', selectmode=BROWSE, exportselection=0)
         self.variable_desc.grid(row=2, column=0,sticky="nsew")
-        scrollvy = tk.Scrollbar(self.frame1, orient=tk.VERTICAL, command=self.variable_desc.yview)
-        scrollvy.grid(row=2, column=1, sticky='nsw')
-        self.variable_label = Label(self.frame1, text="Variables")
+        scrolldy = tk.Scrollbar(self.frame1, orient=tk.VERTICAL, command=self.variable_desc.yview)
+        scrolldy.grid(row=2, column=1, sticky='nsw')
+        self.variable_desc['yscrollcommand'] = scrolldy.set
+
+        self.variable_label = Label(self.frame1, text="Variable Description")
         self.variable_label.grid(row=1, column=0)
+        self.variable_label = Label(self.frame1, text="Selected Variables")
+        self.variable_label.grid(row=3, column=0)
+        self.selecting_selected = Entry(self.frame1,width=40,textvariable=self.selecting_from_selected)
+        self.selecting_selected.grid(row=4,sticky="sw")
+        self.delete_button_for_selected = Button(self.frame1,text="delete",command=self.delete_selected).grid(row=4,sticky="se")
 
         #making the selection option boxes
 
@@ -275,7 +295,7 @@ class MainPage(tk.Frame):
         self.interval_selection = OptionMenu(self.frame2,self.interval,*self.time_interval,command=self.fill_times).grid(row=0,column=0)
 
         #start selection
-        self.start_selection = Listbox(self.frame2,selectmode=BROWSE,exportselection=0)
+        self.start_selection = Listbox(self.frame2,selectmode=BROWSE,height='13',exportselection=0)
         self.start_selection.grid(row=1,column=0)
         self.start_selection.bind("<Double-Button-1>", self.select_start)
         scrollsy = tk.Scrollbar(self.frame2, orient=tk.VERTICAL, command=self.start_selection.yview)
@@ -283,7 +303,7 @@ class MainPage(tk.Frame):
         self.start_selection['yscrollcommand'] = scrollsy.set
 
         #end selection
-        self.end_selection = Listbox(self.frame2,selectmode=BROWSE,exportselection=0)
+        self.end_selection = Listbox(self.frame2,selectmode=BROWSE,height='13',exportselection=0)
         self.end_selection.grid(row=2,column= 0)
         self.end_selection.bind("<Double-Button-1>", self.select_end)
         scrolley = tk.Scrollbar(self.frame2, orient=tk.VERTICAL, command=self.end_selection.yview)
@@ -293,9 +313,9 @@ class MainPage(tk.Frame):
 
 
         # various options:
-        self.days_check = Checkbutton(self.frame3_1, text="days",variable=self.days_c,command=self.days).grid(row=3,column=0)
+        self.days_check = Checkbutton(self.frame3_1, text="days",variable=self.days_c,command=self.days).grid(row=2,column=0)
         self.month_check = Checkbutton(self.frame3_1, text="months",variable=self.month_c,command=self.months).grid(row=4,column=0)
-        self.ten_days_check = Checkbutton(self.frame3_1, text="10 days",variable=self.ten_days_c,command=self.ten_days).grid(row=2,column=0)
+        self.ten_days_check = Checkbutton(self.frame3_1, text="10 days",variable=self.ten_days_c,command=self.ten_days).grid(row=3,column=0)
         self.years_check = Checkbutton(self.frame3_1,text="years",variable=self.years_c,command=self.years).grid(row=1,column=0)
         self.select_label = Label(self.frame3_1,text="select a period base:").grid(row=0,column=0)
 
@@ -318,14 +338,53 @@ class MainPage(tk.Frame):
 
 
     def OnVarSelect(self,event):
+        #clear all variable description
         self.variable_desc.delete(0,END)
+        counter = self.all_the_selected_variables.size()
         widget = event.widget
-        self.var_name = widget.get(widget.curselection()[0])
-        variable = self.nc_file.variables[self.var_name]
-        attributes = variable.ncattrs()
-        self.variable_desc.insert(END,str(variable.name))
-        for attr in attributes:
-            self.variable_desc.insert(END,str(attr)+": "+str(variable.getncattr(attr)))
+        var_name = widget.get(widget.curselection()[0])
+        repeat = False
+        for item in self.all_the_selected_variables.get(0,END):
+            if item[2:] == var_name:
+                repeat = True
+        if repeat == False:
+            self.all_the_selected_variables.insert(END,str(counter)+"|"+str(var_name))
+            self.selected_variables_list.append(var_name)
+
+        #populate variable description
+        variable = self.nc_file.variables[var_name]
+        for attr in variable.ncattrs():
+            self.variable_desc.insert(END,attr+": "+str(variable.getncattr(attr)))
+    def SelectedVarSelect(self,event):
+        widget = event.widget
+        widget_selection = widget.get(widget.curselection()[0])
+        self.selecting_from_selected.set("selected(click delete to delete):"+widget_selection[2:])
+        self.selecting_num = int(widget_selection[0])
+
+    def delete_selected(self):
+        refresh_list = []
+        counter = 0
+        if self.selecting_num < self.all_the_selected_variables.size():
+            self.all_the_selected_variables.delete(self.selecting_num)
+            self.selected_variables_list.remove(self.all_the_selected_variables.get(self.selecting_num)[2:])
+            self.selecting_num -= 1
+            if self.selecting_num < self.all_the_selected_variables.size():
+                if self.selecting_num >=0:
+                    self.selecting_from_selected.set("selected(click delete to delete): "+self.all_the_selected_variables.get(self.selecting_num))
+                elif self.selecting_num <0:
+                    self.selecting_num = 0
+                    self.selecting_from_selected.set("selected(click delete to delete): empty")
+            #refreshing the selecting list
+            for item in self.all_the_selected_variables.get(0,END):
+                refresh_list.append(item[2:])
+            self.all_the_selected_variables.delete(0,END)
+            for item in refresh_list:
+                self.all_the_selected_variables.insert(END,str(counter)+"|"+item)
+                counter +=1
+        else:
+            self.errorlog_bar.config({"background":"PINK"})
+            self.controller.errorlog.set("errorlog : there is no more variable to be deleted from selections...")
+
     def select_start(self,event):
         widget = event.widget
         curselection = widget.get(widget.curselection()[0])
@@ -450,13 +509,9 @@ class MainPage(tk.Frame):
                 self.fill_times("year")
 
     def fill_times(self,selection):
-        self.variable_desc.delete(0,END)
         self.start_selection.delete(0, END)
         self.end_selection.delete(0, END)
         self.interval.set(selection)
-        self.start_date = ""
-        self.end_date = ""
-        self.var_name = ""
 
         if self.interval.get() == "day":
             if self.ten_days_c.get() ==1:
@@ -501,8 +556,10 @@ class MainPage(tk.Frame):
     def update_variable_list(self,interval):
         self.get_ncfile(interval)
         self.variable_list.delete(0,END)
+        self.all_the_selected_variables.delete(0,END)
+        self.selected_variables_list = []
         for variable in self.nc_file.variables.keys():
-            if variable[0].isupper():
+            if variable not in (self.additional_variables+['time_written','date_written','nsteph','datesec','time_bnds','ndcur','date','time']):
                 self.variable_list.insert(END, variable)
     def setFilename(self):
         file_name = askstring("set file name","enter a name for the file to be saved")
@@ -510,9 +567,9 @@ class MainPage(tk.Frame):
 
     def generate_file(self):
         #checking for errors
-        if self.var_name =="":
+        if len(self.selected_variables_list)==0:
             self.errorlog_bar.config({"background": "PINK"})
-            self.controller.errorlog.set("error log: please first select a variable!!!")
+            self.controller.errorlog.set("error log: please first select some variables!!!")
 
         elif self.saved_file_name.get() == "":
             self.errorlog_bar.config({"background": "PINK"})
@@ -552,18 +609,16 @@ class MainPage(tk.Frame):
                 #adding unit variables #
                 ########################
                 print("creating unit variables...")
-                write_data.createVariable('lat',np.float64,self.nc_file.variables['lat'].dimensions)
-                write_data.createVariable('lon',np.float64,self.nc_file.variables['lon'].dimensions)
-                write_data.createVariable('lev',np.float64,self.nc_file.variables['lev'].dimensions)
+                for var in self.additional_variables:
+                    write_data.createVariable(var,np.float64,self.nc_file.variables[var].dimensions)
                 #############################
 
                 #assigning value to unit variables created
-                variables = ['lat','lon','lev']
-                for var in variables:
+                for var in self.additional_variables:
                     write_data.variables[var][:] = self.nc_file.variables[var][:]
 
                 #appending their corresponding attributes
-                for var in variables:
+                for var in self.additional_variables:
                     for attr in self.nc_file.variables[var].ncattrs():
                         write_data.variables[var].setncattr(attr,self.nc_file.variables[var].getncattr(attr))
             """
@@ -577,306 +632,323 @@ class MainPage(tk.Frame):
             |  3.Adding various attributes and dimensions
             |
             """
-                #############################################################################################
-            if (self.ten_days_c.get() ==1):#by 10 days
-                #############################################################################################
-                #iterating through required files
-                print("by 10 days...")
-                print("interval: year" + self.start_year+"| day"+self.end_year)
-                print("interval: day" + self.start_day+"| day"+self.end_day)
-                print("iterating through required files")
-                count = 1
-                temp_progress = 0
-                initiated = False
-                years_started= False
-                years_to_end = False
-                day_started = False
-                day_to_end = False
-                day_file_count = 0
-                year_temp = ""
-                startDay = int(self.start_day)/10
-                endDay = int(self.end_day)/10
-                startYear = int(self.start_year)
-                endYear = int(self.end_year)
-                years = endYear - startYear+1
-                days_period = endDay - startDay +1
+            #append all the selected variables, piled, to the new file.
+            print("appending these variables:",self.selected_variables_list)
+            for var_name in self.selected_variables_list:
+                    #############################################################################################
+                if (self.ten_days_c.get() ==1):#by 10 days
+                    #############################################################################################
+                    #iterating through required files
+                    print("="*40)
+                    print(var_name)
+                    print("="*40)
+                    print("by 10 days...")
+                    print("interval: year" + self.start_year+"| day"+self.end_year)
+                    print("interval: day" + self.start_day+"| day"+self.end_day)
+                    print("iterating through required files")
+                    count = 1
+                    temp_progress = 0
+                    initiated = False
+                    years_started= False
+                    years_to_end = False
+                    day_started = False
+                    day_to_end = False
+                    day_file_count = 0
+                    year_temp = ""
+                    startDay = int(self.start_day)/10
+                    endDay = int(self.end_day)/10
+                    startYear = int(self.start_year)
+                    endYear = int(self.end_year)
+                    years = endYear - startYear+1
+                    days_period = endDay - startDay +1
 
-                days_dir = self.controller.directory + "/h1/"
-                for file in os.listdir(days_dir):
-                    date = file[-19:]
-                    year = date[:4]
-                    if year != year_temp:
-                        day_file_count = 0
-                        day_to_end = False
-                        day_started = False
-                    year_temp = year
-                    day_file_count +=1
-                    if int(year) == startYear:
-                        years_started = True
-                    if int(year) == endYear:
-                        years_to_end = True
-                    if int(day_file_count) == startDay:
-                        day_started = True
-                    if int(day_file_count) == endDay:
-                        day_to_end = True
-                    if years_started and day_started :
-                        with Dataset(days_dir+file,mode='r') as data:
+                    days_dir = self.controller.directory + "/h1/"
+                    for file in os.listdir(days_dir):
+                        date = file[-19:]
+                        year = date[:4]
+                        if year != year_temp:
+                            day_file_count = 0
+                            day_to_end = False
+                            day_started = False
+                        year_temp = year
+                        day_file_count +=1
+                        if int(year) == startYear:
+                            years_started = True
+                        if int(year) == endYear:
+                            years_to_end = True
+                        if int(day_file_count) == startDay:
+                            day_started = True
+                        if int(day_file_count) == endDay:
+                            day_to_end = True
+                        if years_started and day_started :
+                            with Dataset(days_dir+file,mode='r') as data:
+                                if (initiated):
+                                    sum = np.concatenate((sum,data.variables[var_name][:]),axis=0)
+                                else:
+                                    sum = data.variables[var_name][:]
+                                    initiated = True 
+                            progress = round(count/(days_period*years),2)*100
+                            print(count)
+                            print(years*days_period)
+                            if progress != temp_progress:
+                                print("progress: "+"||"*int(progress/10) + str(progress)+"%")
+                            temp_progress = progress
+                            count += 1
+                        if day_to_end:
+                            day_started = False
+                        if years_to_end and day_to_end:
+                            break
+                    #setting the time dimension to be equal to a fixed frame.
+                    with Dataset(self.saved_file_name.get()+".nc", mode='r+') as write_data:
+                    ######
+                        print("appending concatNAted variable to new data file...")
+                        #appending concatNAted variable to new data file/adding datavariables
+                        self.get_ncfile("h1")
+                        singled_out_variable = self.nc_file.variables[var_name]
+                        write_data.createVariable(var_name, np.float32,self.nc_file.variables[var_name].dimensions)
+                        
+                        ###############################################
+
+                        print("assinging value to variable created...")
+                        #assigning value to variable created
+                        write_data.variables[var_name][:] = sum
+
+                        print("adding various attributes...")
+                        #adding various attributes
+                        attrdict = {"Type":"Piled data by 10 days",
+                                    "From|To(years)":self.start_year+"|"+self.end_year,
+                                    "From|To(days)":self.start_day+"|"+self.end_day,
+                                    "period(years)": years,
+                                    "period(days)": days_period}
+                        for attr in singled_out_variable.ncattrs():
+                            attrdict[attr] = singled_out_variable.getncattr(attr)
+                        write_data.variables[var_name].setncatts(attrdict)
+                    #############################################################################################
+                elif (self.days_c.get() ==1):#by days
+                    #############################################################################################
+                    #iterating through required files
+                    print("="*40)
+                    print(var_name)
+                    print("="*40)
+                    print("by days...")
+                    print("interval: year" + self.start_year+"| year"+self.end_year)
+                    print("interval: day" + self.start_day+"| day"+self.end_day)
+                    print("iterating through required files")
+                    count = 0
+                    temp_progress = 0
+                    initiated = False
+                    started= False
+                    to_end = False
+                    startDay = int(self.start_day)
+                    endDay = int(self.end_day)+1
+                    startYear = int(self.start_year)
+                    endYear = int(self.end_year)
+                    years = endYear - startYear
+                    days_period = endDay - startDay
+
+                    days_dir = self.controller.directory + "/h2/"
+                    for file in os.listdir(days_dir):
+                        date = file[-19:]
+                        date = date[:4]
+                        if int(date) == startYear:
+                            started = True
+                        if int(date) == endYear:
+                            to_end = True
+                        if started :
+                            with Dataset(days_dir+file,mode='r') as data:
+                                if (initiated):
+                                    sum = np.concatenate((sum,data.variables[var_name][startDay:endDay]),axis=0)
+                                else:
+                                    sum = data.variables[var_name][startDay:endDay]
+                                    initiated = True 
+                            progress = round(count/years,2)*100
+                            if progress != temp_progress:
+                                print("progress: "+"||"*int(progress/10) + str(progress)+"%")
+                            temp_progress = progress
+                            count += 1
+                            if to_end == True:
+                                break
+                    #setting the time dimension to be equal to a fixed frame.
+                    with Dataset(self.saved_file_name.get()+".nc", mode='r+') as write_data:
+                    ######
+                        print("appending concatnated variable to new data file...")
+                        #appending concatNAted variable to new data file/adding datavariables
+                        self.get_ncfile("h2")
+                        singled_out_variable = self.nc_file.variables[var_name]
+                        write_data.createVariable(var_name, np.float32,self.nc_file.variables[var_name].dimensions)
+                        
+                        ###############################################
+
+                        print("assinging value to variable created...")
+                        #assigning value to variable created
+                        print(sum.shape)
+                        write_data.variables[var_name][:] = sum
+
+                        print("adding various attributes...")
+                        #adding various attributes
+                        attrdict = {"Type":"Piled data by days",
+                                    "From|To(years)":self.start_year+"|"+self.end_year,
+                                    "From|To(days)":self.start_day+"|"+self.end_day,
+                                    "period(years)": years,
+                                    "period(days)": days_period}
+                        for attr in singled_out_variable.ncattrs():
+                            attrdict[attr] = singled_out_variable.getncattr(attr)
+                        write_data.variables[var_name].setncatts(attrdict)
+                    #############################################################################################
+                elif self.month_c.get() ==1: #by months
+                    #############################################################################################
+                    #iterating through required files
+                    print("="*40)
+                    print(var_name)
+                    print("="*40)
+                    print("months...")
+                    print("interval: year" + self.start_year+"| year"+self.end_year)
+                    print("interval: month" + self.start_month+"| month"+self.end_month)
+                    print("iterating through required files")
+                    count = 1
+                    temp_progress = 0
+                    initiated = False
+                    year_started= False
+                    month_started = False
+                    year_to_end = False
+                    month_to_end = False
+                    startYear = int(self.start_year)
+                    endYear = int(self.end_year)
+                    startMonth = int(self.start_month)
+                    endMonth = int(self.end_month)
+                    years = endYear - startYear +1
+                    months = endMonth - startMonth + 1
+                    total_months = years * months
+
+                    months_dir = self.controller.directory + "/h0/"
+                    for file in os.listdir(months_dir):
+                        date = file[-10:]
+                        year = date[:4]
+                        month = date[5:7]
+                        if int(year) == startYear:
+                            year_started = True
+                        if int(month) == startMonth:
+                            month_started = True
+                            month_to_end = False
+                        if int(month) == 1:
+                            month_to_end = False
+                        if int(month) == endMonth:
+                            month_to_end = True
+                        if int(year) == endYear and month_to_end:
+                            year_to_end = True
+                        if year_started and month_started:
                             if (initiated):
-                                sum = np.concatenate((sum,data.variables[self.var_name][:]),axis=0)
+                                with Dataset(months_dir+file,mode='r') as data:
+                                    sum = np.concatenate((sum,data.variables[var_name][:]),axis=0)
                             else:
-                                sum = data.variables[self.var_name][:]
-                                initiated = True 
-                        progress = round(count/(days_period*years),2)*100
-                        print(count)
-                        print(years*days_period)
-                        if progress != temp_progress:
-                            print("progress: "+"||"*int(progress/10) + str(progress)+"%")
-                        temp_progress = progress
-                        count += 1
-                    if day_to_end:
-                        day_started = False
-                    if years_to_end and day_to_end:
-                        break
-                #setting the time dimension to be equal to a fixed frame.
-                with Dataset(self.saved_file_name.get()+".nc", mode='r+') as write_data:
-                ######
-                    print("appending concatNAted variable to new data file...")
-                    #appending concatNAted variable to new data file/adding datavariables
-                    self.get_ncfile("h1")
-                    singled_out_variable = self.nc_file.variables[self.var_name]
-                    write_data.createVariable(self.var_name, np.float32,self.nc_file.variables[self.var_name].dimensions)
-                    
-                    ###############################################
+                                with Dataset(months_dir+file,mode='r') as data:
+                                    sum = data.variables[var_name][:]
+                                    initiated = True
+                            progress = round(count/total_months,2)*100
+                            if progress != temp_progress:
+                                print("progress: "+"||"*int(progress/10) + str(progress)+"%")
+                            temp_progress = progress
+                            count +=1
+                        if month_to_end == True:
+                            month_started = False
+                        if year_to_end :
+                            break
 
-                    print("assinging value to variable created...")
-                    #assigning value to variable created
-                    write_data.variables[self.var_name][:] = sum
+                    #setting the time dimension to be equal to a fixed frame.
+                    with Dataset(self.saved_file_name.get()+".nc", mode='r+') as write_data:
+                    ######
+                        print("appending concatNAted variable to new data file...")            
+                        #appending concatNAted variable to new data file/adding datavariables            
+                        self.get_ncfile("h0")
+                        singled_out_variable = self.nc_file.variables[var_name]
+                        write_data.createVariable(var_name, np.float32,self.nc_file.variables[var_name].dimensions)
+                        ###############################################
 
-                    print("adding various attributes...")
-                    #adding various attributes
-                    attrdict = {"Type":"Piled data by 10 days",
-                                "From|To(years)":self.start_year+"|"+self.end_year,
-                                "From|To(days)":self.start_day+"|"+self.end_day,
-                                "period(years)": years,
-                                "period(days)": days_period}
-                    for attr in singled_out_variable.ncattrs():
-                        attrdict[attr] = singled_out_variable.getncattr(attr)
-                    write_data.variables[self.var_name].setncatts(attrdict)
-                #############################################################################################
-            elif (self.days_c.get() ==1):#by days
-                #############################################################################################
-                #iterating through required files
-                print("by days...")
-                print("interval: year" + self.start_year+"| year"+self.end_year)
-                print("interval: day" + self.start_day+"| day"+self.end_day)
-                print("iterating through required files")
-                count = 0
-                temp_progress = 0
-                initiated = False
-                started= False
-                to_end = False
-                startDay = int(self.start_day)
-                endDay = int(self.end_day)+1
-                startYear = int(self.start_year)
-                endYear = int(self.end_year)
-                years = endYear - startYear
-                days_period = endDay - startDay
+                        print("assinging value to variable created...")
+                        #assigning value to variable created
+                        write_data.variables[var_name][:] = sum                
 
-                days_dir = self.controller.directory + "/h2/"
-                for file in os.listdir(days_dir):
-                    date = file[-19:]
-                    date = date[:4]
-                    if int(date) == startYear:
-                        started = True
-                    if int(date) == endYear:
-                        to_end = True
-                    if started :
-                        with Dataset(days_dir+file,mode='r') as data:
-                            if (initiated):
-                                sum = np.concatenate((sum,data.variables[self.var_name][startDay:endDay]),axis=0)
-                            else:
-                                sum = data.variables[self.var_name][startDay:endDay]
-                                initiated = True 
-                        progress = round(count/years,2)*100
-                        if progress != temp_progress:
-                            print("progress: "+"||"*int(progress/10) + str(progress)+"%")
-                        temp_progress = progress
-                        count += 1
+                        print("adding various attributes...")
+                        #adding various attributes
+                        attrdict = {"Type":"Piled monthly data",
+                                    "From|To(year)":self.start_year+"|"+self.end_year,
+                                    "From|To(month)":self.start_month+"|"+self.end_month,
+                                    "period(years)": years,
+                                    "period(months)":months}
+                        for attr in singled_out_variable.ncattrs():
+                            attrdict[attr] = singled_out_variable.getncattr(attr)
+                        write_data.variables[var_name].setncatts(attrdict)
+                    #############################################################################################
+                elif self.years_c.get() ==1:
+                    #############################################################################################
+                    #iterating through required files
+                    print("="*40)
+                    print(var_name)
+                    print("="*40)
+                    print("years...")
+                    print("interval: year" + self.start_year+"| year"+self.end_year)
+                    print("this will take a long time...")
+                    print("iterating through required files")
+                    count = 1
+                    temp_progress = 0
+                    initiated = False
+                    started= False
+                    to_end = False
+                    startYear = int(self.start_year)
+                    endYear = int(self.end_year)
+                    years = endYear - startYear
+                    years_dir = self.controller.directory + "/h2/"
+                    for file in os.listdir(years_dir):
+                        date = file[-19:]
+                        year = date[:4]
+                        if int(year) == startYear:
+                            started = True
+                        if int(year) == endYear:
+                            to_end = True
+                        if started:
+                            with Dataset(years_dir+file,mode='r') as data:
+                                if (initiated):
+                                    sum = np.concatenate((sum,data.variables[var_name][:]),axis=0)
+                                else:
+                                    sum = data.variables[var_name][:]
+                                    initiated = True
+                            progress = round(count/years,2)*100
+                            if progress != temp_progress:
+                                print("progress: "+"||"*int(progress/10) + str(progress)+"%")
+                            temp_progress = progress
+                            count +=1
                         if to_end == True:
                             break
-                #setting the time dimension to be equal to a fixed frame.
-                with Dataset(self.saved_file_name.get()+".nc", mode='r+') as write_data:
-                ######
-                    print("appending concatNAted variable to new data file...")
-                    #appending concatNAted variable to new data file/adding datavariables
-                    self.get_ncfile("h2")
-                    singled_out_variable = self.nc_file.variables[self.var_name]
-                    write_data.createVariable(self.var_name, np.float32,self.nc_file.variables[self.var_name].dimensions)
-                    
-                    ###############################################
+                    #setting the time dimension to be equal to a fixed frame.
+                    with Dataset(self.saved_file_name.get()+".nc", mode='r+') as write_data:
+                    ######
+                        print("appending concatNAted variable to new data file...")                     
+                        #appending concatNAted variable to new data file/adding datavariables            
+                        self.get_ncfile("h2")
+                        singled_out_variable = self.nc_file.variables[var_name]
+                        dimension =  singled_out_variable.dimensions
+                        write_data.createVariable(var_name, np.float32,dimension)
+                        ###############################################
 
-                    print("assinging value to variable created...")
-                    #assigning value to variable created
-                    write_data.variables[self.var_name][:] = sum
+                        print("assigning value to variable created...")
+                        #assigning value to variable created
+                        write_data.variables[var_name][:] = sum
 
-                    print("adding various attributes...")
-                    #adding various attributes
-                    attrdict = {"Type":"Piled data by days",
-                                "From|To(years)":self.start_year+"|"+self.end_year,
-                                "From|To(days)":self.start_day+"|"+self.end_day,
-                                "period(years)": years,
-                                "period(days)": days_period}
-                    for attr in singled_out_variable.ncattrs():
-                        attrdict[attr] = singled_out_variable.getncattr(attr)
-                    write_data.variables[self.var_name].setncatts(attrdict)
-                #############################################################################################
-            elif self.month_c.get() ==1: #by months
-                #############################################################################################
-                #iterating through required files
-                print("months...")
-                print("interval: year" + self.start_year+"| year"+self.end_year)
-                print("interval: month" + self.start_month+"| month"+self.end_month)
-                print("iterating through required files")
-                count = 1
-                temp_progress = 0
-                initiated = False
-                year_started= False
-                month_started = False
-                year_to_end = False
-                month_to_end = False
-                startYear = int(self.start_year)
-                endYear = int(self.end_year)
-                startMonth = int(self.start_month)
-                endMonth = int(self.end_month)
-                years = endYear - startYear +1
-                months = endMonth - startMonth + 1
-                total_months = years * months
+                        print("adding various attributes...")
+                        #adding various attributes
+                        attrdict = {"Type":"Piled yearly data",
+                                    "From|To":self.start_year+"|"+self.end_year,
+                                    "period(years)":years}
+                        for attr in singled_out_variable.ncattrs():
+                            attrdict[attr] = singled_out_variable.getncattr(attr)
+                        write_data.variables[var_name].setncatts(attrdict)
 
-                months_dir = self.controller.directory + "/h0/"
-                for file in os.listdir(months_dir):
-                    date = file[-10:]
-                    year = date[:4]
-                    month = date[5:7]
-                    if int(year) == startYear:
-                        year_started = True
-                    if int(month) == startMonth:
-                        month_started = True
-                        month_to_end = False
-                    if int(month) == 1:
-                        month_to_end = False
-                    if int(month) == endMonth:
-                        month_to_end = True
-                    if int(year) == endYear and month_to_end:
-                        year_to_end = True
-                    if year_started and month_started:
-                        if (initiated):
-                            with Dataset(months_dir+file,mode='r') as data:
-                                sum = np.concatenate((sum,data.variables[self.var_name][:]),axis=0)
-                        else:
-                            with Dataset(months_dir+file,mode='r') as data:
-                                sum = data.variables[self.var_name][:]
-                                initiated = True
-                        progress = round(count/total_months,2)*100
-                        if progress != temp_progress:
-                            print("progress: "+"||"*int(progress/10) + str(progress)+"%")
-                        temp_progress = progress
-                        count +=1
-                    if month_to_end == True:
-                        month_started = False
-                    if year_to_end :
-                        break
-
-                #setting the time dimension to be equal to a fixed frame.
-                with Dataset(self.saved_file_name.get()+".nc", mode='r+') as write_data:
-                ######
-                    print("appending concatNAted variable to new data file...")            
-                    #appending concatNAted variable to new data file/adding datavariables            
-                    self.get_ncfile("h0")
-                    singled_out_variable = self.nc_file.variables[self.var_name]
-                    write_data.createVariable(self.var_name, np.float32,self.nc_file.variables[self.var_name].dimensions)
-                    ###############################################
-
-                    print("assinging value to variable created...")
-                    #assigning value to variable created
-                    write_data.variables[self.var_name][:] = sum
-
-                    print("adding various attributes...")
-                    #adding various attributes
-                    attrdict = {"Type":"Piled monthly data",
-                                "From|To(year)":self.start_year+"|"+self.end_year,
-                                "From|To(month)":self.start_month+"|"+self.end_month,
-                                "period(years)": years,
-                                "period(months)":months}
-                    for attr in singled_out_variable.ncattrs():
-                        attrdict[attr] = singled_out_variable.getncattr(attr)
-                    write_data.variables[self.var_name].setncatts(attrdict)
-                #############################################################################################
-            elif self.years_c.get() ==1:
-                #############################################################################################
-                #iterating through required files
-                print("years...")
-                print("interval: year" + self.start_year+"| year"+self.end_year)
-                print("this will take a long time...")
-                print("iterating through required files")
-                count = 1
-                temp_progress = 0
-                initiated = False
-                started= False
-                to_end = False
-                startYear = int(self.start_year)
-                endYear = int(self.end_year)
-                years = endYear - startYear
-                years_dir = self.controller.directory + "/h2/"
-                for file in os.listdir(years_dir):
-                    date = file[-19:]
-                    year = date[:4]
-                    if int(year) == startYear:
-                        started = True
-                    if int(year) == endYear:
-                        to_end = True
-                    if started:
-                        with Dataset(years_dir+file,mode='r') as data:
-                            if (initiated):
-                                sum = np.concatenate((sum,data.variables[self.var_name][:]),axis=0)
-                            else:
-                                sum = data.variables[self.var_name][:]
-                                initiated = True
-                        progress = round(count/years,2)*100
-                        if progress != temp_progress:
-                            print("progress: "+"||"*int(progress/10) + str(progress)+"%")
-                        temp_progress = progress
-                        count +=1
-                    if to_end == True:
-                        break
-                #setting the time dimension to be equal to a fixed frame.
-                with Dataset(self.saved_file_name.get()+".nc", mode='r+') as write_data:
-                ######
-                    print("appending concatNAted variable to new data file...")                     
-                    #appending concatNAted variable to new data file/adding datavariables            
-                    self.get_ncfile("h2")
-                    singled_out_variable = self.nc_file.variables[self.var_name]
-                    dimension =  singled_out_variable.dimensions
-                    write_data.createVariable(self.var_name, np.float32,dimension)
-                    ###############################################
-
-                    print("assigning value to variable created...")
-                    #assigning value to variable created
-                    write_data.variables[self.var_name][:] = sum
-
-                    print("adding various attributes...")
-                    #adding various attributes
-                    attrdict = {"Type":"Piled yearly data",
-                                "From|To":self.start_year+"|"+self.end_year,
-                                "period(years)":years}
-                    for attr in singled_out_variable.ncattrs():
-                        attrdict[attr] = singled_out_variable.getncattr(attr)
-                    write_data.variables[self.var_name].setncatts(attrdict)
-
-                #############################################################################################
+                    #############################################################################################
             print("done!")
             self.controller.popup("Success!", "file :'"+self.saved_file_name.get()+"' successfully saved at: " + saving_directory)
             self.errorlog_bar.config({"background": "WHITE"})
             self.controller.errorlog.set("errorlog :")
+            self.variable_desc.delete(0,END)
             os.chdir(self.controller.directory)
 
     # def saveFilename(self):
